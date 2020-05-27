@@ -1221,23 +1221,12 @@ void free_huge_page(struct page *page)
 	ClearPagePrivate(page);
 
 	/*
-	 * If PagePrivate() was set on page, page allocation consumed a
-	 * reservation.  If the page was associated with a subpool, there
-	 * would have been a page reserved in the subpool before allocation
-	 * via hugepage_subpool_get_pages().  Since we are 'restoring' the
-	 * reservtion, do not call hugepage_subpool_put_pages() as this will
-	 * remove the reserved page from the subpool.
+	 * A return code of zero implies that the subpool will be under its
+	 * minimum size if the reservation is not restored after page is free.
+	 * Therefore, force restore_reserve operation.
 	 */
-	if (!restore_reserve) {
-		/*
-		 * A return code of zero implies that the subpool will be
-		 * under its minimum size if the reservation is not restored
-		 * after page is free.  Therefore, force restore_reserve
-		 * operation.
-		 */
-		if (hugepage_subpool_put_pages(spool, 1) == 0)
-			restore_reserve = true;
-	}
+	if (hugepage_subpool_put_pages(spool, 1) == 0)
+		restore_reserve = true;
 
 	spin_lock(&hugetlb_lock);
 	clear_page_huge_active(page);
@@ -3483,6 +3472,7 @@ retry_avoidcopy:
 	copy_user_huge_page(new_page, old_page, address, vma,
 			    pages_per_huge_page(h));
 	__SetPageUptodate(new_page);
+	set_page_huge_active(new_page);
 
 	mmun_start = address & huge_page_mask(h);
 	mmun_end = mmun_start + huge_page_size(h);
@@ -3504,7 +3494,6 @@ retry_avoidcopy:
 				make_huge_pte(vma, new_page, 1));
 		page_remove_rmap(old_page);
 		hugepage_add_new_anon_rmap(new_page, vma, address);
-		set_page_huge_active(new_page);
 		/* Make the old page be freed below */
 		new_page = old_page;
 	}
@@ -3586,7 +3575,6 @@ static int hugetlb_no_page(struct mm_struct *mm, struct vm_area_struct *vma,
 	struct page *page;
 	pte_t new_pte;
 	spinlock_t *ptl;
-	bool new_page = false;
 
 	/*
 	 * Currently, we are forced to kill the process in the event the
@@ -3620,7 +3608,7 @@ retry:
 		}
 		clear_huge_page(page, address, pages_per_huge_page(h));
 		__SetPageUptodate(page);
-		new_page = true;
+		set_page_huge_active(page);
 
 		if (vma->vm_flags & VM_MAYSHARE) {
 			int err = huge_add_to_page_cache(page, mapping, idx);
@@ -3692,15 +3680,6 @@ retry:
 	}
 
 	spin_unlock(ptl);
-
-	/*
-	 * Only make newly allocated pages active.  Existing pages found
-	 * in the pagecache could be !page_huge_active() if they have been
-	 * isolated for migration.
-	 */
-	if (new_page)
-		set_page_huge_active(page);
-
 	unlock_page(page);
 out:
 	return ret;
@@ -3714,14 +3693,21 @@ backout_unlocked:
 }
 
 #ifdef CONFIG_SMP
-u32 hugetlb_fault_mutex_hash(struct hstate *h, struct address_space *mapping,
+u32 hugetlb_fault_mutex_hash(struct hstate *h, struct mm_struct *mm,
+			    struct vm_area_struct *vma,
+			    struct address_space *mapping,
 			    pgoff_t idx, unsigned long address)
 {
 	unsigned long key[2];
 	u32 hash;
 
-	key[0] = (unsigned long) mapping;
-	key[1] = idx;
+	if (vma->vm_flags & VM_SHARED) {
+		key[0] = (unsigned long) mapping;
+		key[1] = idx;
+	} else {
+		key[0] = (unsigned long) mm;
+		key[1] = address >> huge_page_shift(h);
+	}
 
 	hash = jhash2((u32 *)&key, sizeof(key)/sizeof(u32), 0);
 
@@ -3732,7 +3718,9 @@ u32 hugetlb_fault_mutex_hash(struct hstate *h, struct address_space *mapping,
  * For uniprocesor systems we always use a single mutex, so just
  * return 0 and avoid the hashing overhead.
  */
-u32 hugetlb_fault_mutex_hash(struct hstate *h, struct address_space *mapping,
+u32 hugetlb_fault_mutex_hash(struct hstate *h, struct mm_struct *mm,
+			    struct vm_area_struct *vma,
+			    struct address_space *mapping,
 			    pgoff_t idx, unsigned long address)
 {
 	return 0;
@@ -3778,7 +3766,7 @@ int hugetlb_fault(struct mm_struct *mm, struct vm_area_struct *vma,
 	 * get spurious allocation failures if two CPUs race to instantiate
 	 * the same page in the page cache.
 	 */
-	hash = hugetlb_fault_mutex_hash(h, mapping, idx, address);
+	hash = hugetlb_fault_mutex_hash(h, mm, vma, mapping, idx, address);
 	mutex_lock(&hugetlb_fault_mutex_table[hash]);
 
 	entry = huge_ptep_get(ptep);

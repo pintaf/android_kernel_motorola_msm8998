@@ -2659,13 +2659,6 @@ int mdss_mdp_overlay_kickoff(struct msm_fb_data_type *mfd,
 		goto commit_fail;
 	}
 
-	ret = mdss_mdp_ctl_intf_event(ctl, MDSS_EVENT_DSI_DYNAMIC_BITCLK,
-		NULL, CTL_INTF_EVENT_FLAG_SKIP_BROADCAST);
-	if (IS_ERR_VALUE(ret)) {
-		pr_err("failed to update dynamic bit clk!\n");
-		goto commit_fail;
-	}
-
 	mutex_lock(&mdp5_data->ov_lock);
 
 	/* Disable secure display/camera for video mode panels */
@@ -5463,7 +5456,6 @@ static int __handle_overlay_prepare(struct msm_fb_data_type *mfd,
 		sorted_ovs = kzalloc(num_ovs * sizeof(*ip_ovs), GFP_KERNEL);
 		if (!sorted_ovs) {
 			pr_err("error allocating ovlist mem\n");
-			mutex_unlock(&mdp5_data->ov_lock);
 			return -ENOMEM;
 		}
 		memcpy(sorted_ovs, ip_ovs, num_ovs * sizeof(*ip_ovs));
@@ -5471,7 +5463,6 @@ static int __handle_overlay_prepare(struct msm_fb_data_type *mfd,
 		if (ret) {
 			pr_err("src_split_sort failed. ret=%d\n", ret);
 			kfree(sorted_ovs);
-			mutex_unlock(&mdp5_data->ov_lock);
 			return ret;
 		}
 	}
@@ -6607,15 +6598,6 @@ void mdss_mdp_footswitch_ctrl_handler(bool on)
 static void mdss_mdp_signal_retire_fence(struct msm_fb_data_type *mfd,
 					 int retire_cnt)
 {
-	struct mdss_overlay_private *mdp5_data;
-
-	if (!mfd)
-		return;
-
-	mdp5_data = mfd_to_mdp5_data(mfd);
-	if (!mdp5_data->ctl || !mdp5_data->ctl->ops.remove_vsync_handler)
-		return;
-
 	__vsync_retire_signal(mfd, retire_cnt);
 	pr_debug("Signaled (%d) pending retire fence\n", retire_cnt);
 }

@@ -108,8 +108,6 @@ int ext4_process_policy(const struct ext4_encryption_policy *policy,
 	if (!ext4_inode_has_encryption_context(inode)) {
 		if (!S_ISDIR(inode->i_mode))
 			return -EINVAL;
-		if (IS_DEADDIR(inode))
-			return -ENOENT;
 		if (!ext4_empty_dir(inode))
 			return -ENOTEMPTY;
 		return ext4_create_encryption_context_from_policy(inode,
@@ -201,17 +199,11 @@ int ext4_is_child_context_consistent_with_parent(struct inode *parent,
 	 */
 
 	res = ext4_get_encryption_info(parent);
-	if (res) {
-		pr_warn("%s: get parent encryption info %lu  dir\n", __func__,
-			parent->i_ino);
+	if (res)
 		return 0;
-	}
 	res = ext4_get_encryption_info(child);
-	if (res) {
-		pr_warn("%s: get parent encryption info %lu  file\n", __func__,
-			child->i_ino);
+	if (res)
 		return 0;
-	}
 	parent_ci = EXT4_I(parent)->i_crypt_info;
 	child_ci = EXT4_I(child)->i_crypt_info;
 	if (parent_ci && child_ci) {
@@ -239,18 +231,14 @@ int ext4_is_child_context_consistent_with_parent(struct inode *parent,
 	res = ext4_xattr_get(parent, EXT4_XATTR_INDEX_ENCRYPTION,
 			     EXT4_XATTR_NAME_ENCRYPTION_CONTEXT,
 			     &parent_ctx, sizeof(parent_ctx));
-	if (res != sizeof(parent_ctx)) {
-		pr_warn("%s: parent ctx size error res:%d\n", __func__, res);
+	if (res != sizeof(parent_ctx))
 		return 0;
-	}
 
 	res = ext4_xattr_get(child, EXT4_XATTR_INDEX_ENCRYPTION,
 			     EXT4_XATTR_NAME_ENCRYPTION_CONTEXT,
 			     &child_ctx, sizeof(child_ctx));
-	if (res != sizeof(child_ctx)) {
-		pr_warn("%s: child ctx size error res:%d\n", __func__, res);
+	if (res != sizeof(child_ctx))
 		return 0;
-	}
 
 	res = memcmp(parent_ctx.master_key_descriptor,
 		      child_ctx.master_key_descriptor,

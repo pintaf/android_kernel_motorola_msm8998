@@ -1,4 +1,4 @@
-/* Copyright (c) 2012-2019, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2012-2018, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -362,11 +362,6 @@ static int32_t sp_make_afe_callback(uint32_t opcode, uint32_t *payload,
 	/* Set command specific details */
 	switch (opcode) {
 	case AFE_PORT_CMDRSP_GET_PARAM_V2:
-		if (payload_size < (5 * sizeof(uint32_t))) {
-			pr_err("%s: Error: size %d is less than expected\n",
-				__func__, payload_size);
-			return -EINVAL;
-		}
 		expected_size += sizeof(struct param_hdr_v1);
 		param_hdr.module_id = payload[1];
 		param_hdr.instance_id = INSTANCE_ID_0;
@@ -375,17 +370,7 @@ static int32_t sp_make_afe_callback(uint32_t opcode, uint32_t *payload,
 		data_start = &payload[4];
 		break;
 	case AFE_PORT_CMDRSP_GET_PARAM_V3:
-		if (payload_size < (6 * sizeof(uint32_t))) {
-			pr_err("%s: Error: size %d is less than expected\n",
-				__func__, payload_size);
-			return -EINVAL;
-		}
 		expected_size += sizeof(struct param_hdr_v3);
-		if (payload_size < expected_size) {
-			pr_err("%s: Error: size %d is less than expected\n",
-				__func__, payload_size);
-			return -EINVAL;
-		}
 		memcpy(&param_hdr, &payload[1], sizeof(struct param_hdr_v3));
 		data_start = &payload[5];
 		break;
@@ -527,15 +512,6 @@ static int32_t afe_lpass_resources_callback(struct apr_client_data *data)
 	return 0;
 }
 
-static bool afe_token_is_valid(uint32_t token)
-{
-	if (token >= AFE_MAX_PORTS) {
-		pr_err("%s: token %d is invalid.\n", __func__, token);
-		return false;
-	}
-	return true;
-}
-
 static int32_t afe_callback(struct apr_client_data *data, void *priv)
 {
 	if (!data) {
@@ -599,7 +575,6 @@ static int32_t afe_callback(struct apr_client_data *data, void *priv)
 	    data->opcode == AFE_PORT_CMDRSP_GET_PARAM_V3) {
 		uint32_t *payload = data->payload;
 		uint32_t param_id;
-		uint32_t param_id_pos = 0;
 
 		if (!payload || (data->token >= AFE_MAX_PORTS)) {
 			pr_err("%s: Error: size %d payload %pK token %d\n",
@@ -608,22 +583,9 @@ static int32_t afe_callback(struct apr_client_data *data, void *priv)
 			return -EINVAL;
 		}
 
-		if (rtac_make_afe_callback(data->payload,
-					   data->payload_size))
-			return 0;
-
-		if (data->opcode == AFE_PORT_CMDRSP_GET_PARAM_V3)
-			param_id_pos = 4;
-		else
-			param_id_pos = 3;
-
-		if (data->payload_size >= param_id_pos * sizeof(uint32_t))
-			param_id = payload[param_id_pos - 1];
-		else {
-			pr_err("%s: Error: size %d is less than expected\n",
-				__func__, data->payload_size);
-			return -EINVAL;
-		}
+		param_id = (data->opcode == AFE_PORT_CMDRSP_GET_PARAM_V3) ?
+				   payload[3] :
+				   payload[2];
 		if (param_id == AFE_PARAM_ID_DEV_TIMING_STATS) {
 			av_dev_drift_afe_cb_handler(data->opcode, data->payload,
 						    data->payload_size);
@@ -645,6 +607,10 @@ static int32_t afe_callback(struct apr_client_data *data, void *priv)
 			atomic_set(&this_afe.state, 0);
 #endif
 		} else {
+			if (rtac_make_afe_callback(data->payload,
+						   data->payload_size))
+				return 0;
+
 			if (sp_make_afe_callback(data->opcode, data->payload,
 						 data->payload_size))
 				return -EINVAL;
@@ -655,10 +621,7 @@ static int32_t afe_callback(struct apr_client_data *data, void *priv)
 
 		ret = afe_lpass_resources_callback(data);
 		atomic_set(&this_afe.state, 0);
-		if (afe_token_is_valid(data->token))
-			wake_up(&this_afe.wait[data->token]);
-		else
-			return -EINVAL;
+		wake_up(&this_afe.wait[data->token]);
 		if (!ret) {
 			return ret;
 		}
@@ -667,24 +630,14 @@ static int32_t afe_callback(struct apr_client_data *data, void *priv)
 		uint16_t port_id = 0;
 		payload = data->payload;
 		if (data->opcode == APR_BASIC_RSP_RESULT) {
-			if (data->payload_size < (2 * sizeof(uint32_t))) {
-				pr_err("%s: Error: size %d is less than expected\n",
-					__func__, data->payload_size);
-				return -EINVAL;
-			}
 			pr_debug("%s:opcode = 0x%x cmd = 0x%x status = 0x%x token=%d\n",
 				__func__, data->opcode,
 				payload[0], payload[1], data->token);
 			/* payload[1] contains the error status for response */
 			if (payload[1] != 0) {
 				atomic_set(&this_afe.status, payload[1]);
-				if (payload[0] == AFE_PORT_CMD_SET_PARAM_V2) {
-					pr_debug("%s: cmd = 0x%x returned error = 0x%x\n",
-						__func__, payload[0], payload[1]);
-				} else {
-					pr_err("%s: cmd = 0x%x returned error = 0x%x\n",
-						__func__, payload[0], payload[1]);
-				}
+				pr_err("%s: cmd = 0x%x returned error = 0x%x\n",
+					__func__, payload[0], payload[1]);
 			}
 			switch (payload[0]) {
 			case AFE_PORT_CMD_SET_PARAM_V2:
@@ -704,10 +657,7 @@ static int32_t afe_callback(struct apr_client_data *data, void *priv)
 			case AFE_SVC_CMD_SET_PARAM_V2:
 			case AFE_CMD_REQUEST_LPASS_RESOURCES:
 				atomic_set(&this_afe.state, 0);
-				if (afe_token_is_valid(data->token))
-					wake_up(&this_afe.wait[data->token]);
-				else
-					return -EINVAL;
+				wake_up(&this_afe.wait[data->token]);
 				break;
 			case AFE_SERVICE_CMD_REGISTER_RT_PORT_DRIVER:
 				break;
@@ -719,10 +669,7 @@ static int32_t afe_callback(struct apr_client_data *data, void *priv)
 				break;
 			case AFE_CMD_ADD_TOPOLOGIES:
 				atomic_set(&this_afe.state, 0);
-				if (afe_token_is_valid(data->token))
-					wake_up(&this_afe.wait[data->token]);
-				else
-					return -EINVAL;
+				wake_up(&this_afe.wait[data->token]);
 				pr_debug("%s: AFE_CMD_ADD_TOPOLOGIES cmd 0x%x\n",
 						__func__, payload[1]);
 				break;
@@ -778,10 +725,7 @@ static int32_t afe_callback(struct apr_client_data *data, void *priv)
 			else
 				this_afe.mmap_handle = payload[0];
 			atomic_set(&this_afe.state, 0);
-			if (afe_token_is_valid(data->token))
-				wake_up(&this_afe.wait[data->token]);
-			else
-				return -EINVAL;
+			wake_up(&this_afe.wait[data->token]);
 		} else if (data->opcode == AFE_EVENT_RT_PROXY_PORT_STATUS) {
 			port_id = (uint16_t)(0x0000FFFF & payload[0]);
 		}
@@ -1069,7 +1013,6 @@ int afe_q6_interface_prepare(void)
 static int afe_apr_send_pkt(void *data, wait_queue_head_t *wait)
 {
 	int ret;
-	struct apr_hdr *hdr = (struct apr_hdr *)data;
 
 	if (wait)
 		atomic_set(&this_afe.state, 1);
@@ -1083,15 +1026,9 @@ static int afe_apr_send_pkt(void *data, wait_queue_head_t *wait)
 			if (!ret) {
 				ret = -ETIMEDOUT;
 			} else if (atomic_read(&this_afe.status) > 0) {
-				if (hdr->opcode == AFE_PORT_CMD_SET_PARAM_V2) {
-					pr_debug("%s: DSP returned error[%s]\n", __func__,
-						adsp_err_get_err_str(atomic_read(
-							&this_afe.status)));
-				} else {
-					pr_err("%s: DSP returned error[%s]\n", __func__,
-						adsp_err_get_err_str(atomic_read(
-							&this_afe.status)));
-				}
+				pr_err("%s: DSP returned error[%s]\n", __func__,
+					adsp_err_get_err_str(atomic_read(
+					&this_afe.status)));
 				ret = adsp_err_get_lnx_err_code(
 						atomic_read(&this_afe.status));
 			} else {

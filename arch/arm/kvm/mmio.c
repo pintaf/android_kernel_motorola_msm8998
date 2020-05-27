@@ -87,22 +87,17 @@ static unsigned long mmio_read_buf(char *buf, unsigned int len)
 
 /**
  * kvm_handle_mmio_return -- Handle MMIO loads after user space emulation
- *			     or in-kernel IO emulation
- *
  * @vcpu: The VCPU pointer
  * @run:  The VCPU run struct containing the mmio data
+ *
+ * This should only be called after returning from userspace for MMIO load
+ * emulation.
  */
 int kvm_handle_mmio_return(struct kvm_vcpu *vcpu, struct kvm_run *run)
 {
 	unsigned long data;
 	unsigned int len;
 	int mask;
-
-	/* Detect an already handled MMIO return */
-	if (unlikely(!vcpu->mmio_needed))
-		return 0;
-
-	vcpu->mmio_needed = 0;
 
 	if (!run->mmio.is_write) {
 		len = run->mmio.len;
@@ -212,18 +207,14 @@ int io_mem_abort(struct kvm_vcpu *vcpu, struct kvm_run *run,
 	run->mmio.is_write	= is_write;
 	run->mmio.phys_addr	= fault_ipa;
 	run->mmio.len		= len;
-	vcpu->mmio_needed	= 1;
+	memcpy(run->mmio.data, data_buf, len);
 
 	if (!ret) {
 		/* We handled the access successfully in the kernel. */
-		if (!is_write)
-			memcpy(run->mmio.data, data_buf, len);
 		kvm_handle_mmio_return(vcpu, run);
 		return 1;
 	}
 
-	if (is_write)
-		memcpy(run->mmio.data, data_buf, len);
 	run->exit_reason	= KVM_EXIT_MMIO;
 	return 0;
 }

@@ -2289,7 +2289,7 @@ int f2fs_sanity_check_ckpt(struct f2fs_sb_info *sbi)
 	unsigned int sit_segs, nat_segs;
 	unsigned int sit_bitmap_size, nat_bitmap_size;
 	unsigned int log_blocks_per_seg;
-	int i, j;
+	int i;
 
 	total = le32_to_cpu(raw_super->segment_count);
 	fsmeta = le32_to_cpu(raw_super->segment_count_ckpt);
@@ -2320,43 +2320,11 @@ int f2fs_sanity_check_ckpt(struct f2fs_sb_info *sbi)
 		if (le32_to_cpu(ckpt->cur_node_segno[i]) >= main_segs ||
 			le16_to_cpu(ckpt->cur_node_blkoff[i]) >= blocks_per_seg)
 			return 1;
-		for (j = i + 1; j < NR_CURSEG_NODE_TYPE; j++) {
-			if (le32_to_cpu(ckpt->cur_node_segno[i]) ==
-				le32_to_cpu(ckpt->cur_node_segno[j])) {
-				f2fs_msg(sbi->sb, KERN_ERR,
-					"Node segment (%u, %u) has the same "
-					"segno: %u", i, j,
-					le32_to_cpu(ckpt->cur_node_segno[i]));
-				return 1;
-			}
-		}
 	}
 	for (i = 0; i < NR_CURSEG_DATA_TYPE; i++) {
 		if (le32_to_cpu(ckpt->cur_data_segno[i]) >= main_segs ||
 			le16_to_cpu(ckpt->cur_data_blkoff[i]) >= blocks_per_seg)
 			return 1;
-		for (j = i + 1; j < NR_CURSEG_DATA_TYPE; j++) {
-			if (le32_to_cpu(ckpt->cur_data_segno[i]) ==
-				le32_to_cpu(ckpt->cur_data_segno[j])) {
-				f2fs_msg(sbi->sb, KERN_ERR,
-					"Data segment (%u, %u) has the same "
-					"segno: %u", i, j,
-					le32_to_cpu(ckpt->cur_data_segno[i]));
-				return 1;
-			}
-		}
-	}
-	for (i = 0; i < NR_CURSEG_NODE_TYPE; i++) {
-		for (j = 0; j < NR_CURSEG_DATA_TYPE; j++) {
-			if (le32_to_cpu(ckpt->cur_node_segno[i]) ==
-				le32_to_cpu(ckpt->cur_data_segno[j])) {
-				f2fs_msg(sbi->sb, KERN_ERR,
-					"Node segment (%u) and Data segment (%u)"
-					" has the same segno: %u", i, j,
-					le32_to_cpu(ckpt->cur_node_segno[i]));
-				return 1;
-			}
-		}
 	}
 
 	sit_bitmap_size = le32_to_cpu(ckpt->sit_ver_bitmap_bytesize);
@@ -2434,12 +2402,8 @@ static int init_percpu_info(struct f2fs_sb_info *sbi)
 	if (err)
 		return err;
 
-	err = percpu_counter_init(&sbi->total_valid_inode_count, 0,
+	return percpu_counter_init(&sbi->total_valid_inode_count, 0,
 								GFP_KERNEL);
-	if (err)
-		percpu_counter_destroy(&sbi->alloc_valid_block_count);
-
-	return err;
 }
 
 #ifdef CONFIG_BLK_DEV_ZONED
@@ -2855,7 +2819,7 @@ try_onemore:
 				     GFP_KERNEL);
 		if (!sbi->write_io[i]) {
 			err = -ENOMEM;
-			goto free_bio_info;
+			goto free_options;
 		}
 
 		for (j = HOT; j < n; j++) {

@@ -1229,14 +1229,6 @@ static void vxlan_rcv(struct vxlan_sock *vs, struct sk_buff *skb,
 		}
 	}
 
-	rcu_read_lock();
-
-	if (unlikely(!(vxlan->dev->flags & IFF_UP))) {
-		rcu_read_unlock();
-		atomic_long_inc(&vxlan->dev->rx_dropped);
-		goto drop;
-	}
-
 	stats = this_cpu_ptr(vxlan->dev->tstats);
 	u64_stats_update_begin(&stats->syncp);
 	stats->rx_packets++;
@@ -1244,8 +1236,6 @@ static void vxlan_rcv(struct vxlan_sock *vs, struct sk_buff *skb,
 	u64_stats_update_end(&stats->syncp);
 
 	gro_cells_receive(&vxlan->gro_cells, skb);
-
-	rcu_read_unlock();
 
 	return;
 drop:
@@ -2006,11 +1996,8 @@ static void vxlan_xmit_one(struct sk_buff *skb, struct net_device *dev,
 		ttl = info->key.ttl;
 		tos = info->key.tos;
 
-		if (info->options_len) {
-			if (info->options_len < sizeof(*md))
-				goto drop;
+		if (info->options_len)
 			md = ip_tunnel_info_opts(info);
-		}
 	} else {
 		md->gbp = skb->mark;
 	}
@@ -2324,8 +2311,6 @@ static void vxlan_fdb_delete_default(struct vxlan_dev *vxlan)
 static void vxlan_uninit(struct net_device *dev)
 {
 	struct vxlan_dev *vxlan = netdev_priv(dev);
-
-	gro_cells_destroy(&vxlan->gro_cells);
 
 	vxlan_fdb_delete_default(vxlan);
 
@@ -3071,6 +3056,7 @@ static void vxlan_dellink(struct net_device *dev, struct list_head *head)
 {
 	struct vxlan_dev *vxlan = netdev_priv(dev);
 
+	gro_cells_destroy(&vxlan->gro_cells);
 	list_del(&vxlan->next);
 	unregister_netdevice_queue(dev, head);
 }
@@ -3279,8 +3265,10 @@ static void __net_exit vxlan_exit_net(struct net *net)
 		/* If vxlan->dev is in the same netns, it has already been added
 		 * to the list by the previous loop.
 		 */
-		if (!net_eq(dev_net(vxlan->dev), net))
+		if (!net_eq(dev_net(vxlan->dev), net)) {
+			gro_cells_destroy(&vxlan->gro_cells);
 			unregister_netdevice_queue(vxlan->dev, &list);
+		}
 	}
 
 	unregister_netdevice_many(&list);

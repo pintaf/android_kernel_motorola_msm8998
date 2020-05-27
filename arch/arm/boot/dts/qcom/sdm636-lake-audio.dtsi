@@ -280,12 +280,8 @@
 					};
 					calibration {
 						cirrus,full-name;
-						cirrus,wmfw-file = "cs35l41-dsp1-prot.wmfw";
+						cirrus,wmfw-file = "cs35l41-dsp1-spk-cali.wmfw";
 						cirrus,bin-file = "cs35l41-dsp1-spk-cali.bin";
-					};
-					diagnostic {
-						cirrus,full-name;
-						cirrus,wmfw-file = "cs35l41-dsp1-diag.wmfw";
 					};
 				};
 			};
@@ -325,12 +321,8 @@
 					};
 					calibration {
 						cirrus,full-name;
-						cirrus,wmfw-file = "cs35l41-dsp1-prot.wmfw";
+						cirrus,wmfw-file = "cs35l41-dsp1-spk-cali.wmfw";
 						cirrus,bin-file = "cs35l41-dsp1-rcv-cali.bin";
-					};
-					diagnostic {
-						cirrus,full-name;
-						cirrus,wmfw-file = "cs35l41-dsp1-diag.wmfw";
 					};
 				};
 			};
@@ -429,7 +421,7 @@
 				firmware {
 					ultrasound {
 						wlf,wmfw-file = "marley-dsp1-ultrasound.wmfw";
-						wlf,bin-file = "marley-dsp1-ultrasound.bin";
+						wlf,bin-file = "marley-dsp1v-ultrasound.bin";
 					};
 				};
 			};

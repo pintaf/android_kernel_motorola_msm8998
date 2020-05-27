@@ -1571,7 +1571,7 @@ static struct dentry *ext4_lookup(struct inode *dir, struct dentry *dentry,
 	struct ext4_dir_entry_2 *de;
 	struct buffer_head *bh;
 
-	if (ext4_encrypted_inode(dir)) {
+       if (ext4_encrypted_inode(dir)) {
                int res = ext4_get_encryption_info(dir);
 
 		/*
@@ -1621,9 +1621,9 @@ static struct dentry *ext4_lookup(struct inode *dir, struct dentry *dentry,
 		    !ext4_is_child_context_consistent_with_parent(dir,
 								  inode)) {
 			ext4_warning(inode->i_sb,
-				     "Inconsistent encryption contexts: %lu/%lu %s\n",
+				     "Inconsistent encryption contexts: %lu/%lu\n",
 				     (unsigned long) dir->i_ino,
-				     (unsigned long) inode->i_ino, dentry->d_name.name);
+				     (unsigned long) inode->i_ino);
 			iput(inode);
 			WARN_ON("Inconsistent encryption contexts");
 			return ERR_PTR(-EPERM);
@@ -2437,7 +2437,8 @@ static int ext4_add_nondir(handle_t *handle,
 	int err = ext4_add_entry(handle, dentry, inode);
 	if (!err) {
 		ext4_mark_inode_dirty(handle, inode);
-		d_instantiate_new(dentry, inode);
+		unlock_new_inode(inode);
+		d_instantiate(dentry, inode);
 		return 0;
 	}
 	drop_nlink(inode);
@@ -2676,7 +2677,8 @@ out_clear_inode:
 	err = ext4_mark_inode_dirty(handle, dir);
 	if (err)
 		goto out_clear_inode;
-	d_instantiate_new(dentry, inode);
+	unlock_new_inode(inode);
+	d_instantiate(dentry, inode);
 	if (IS_DIRSYNC(dir))
 		ext4_handle_sync(handle);
 
@@ -3046,17 +3048,18 @@ static int ext4_unlink(struct inode *dir, struct dentry *dentry)
 	if (IS_DIRSYNC(dir))
 		ext4_handle_sync(handle);
 
+	if (inode->i_nlink == 0) {
+		ext4_warning_inode(inode, "Deleting file '%.*s' with no links",
+				   dentry->d_name.len, dentry->d_name.name);
+		set_nlink(inode, 1);
+	}
 	retval = ext4_delete_entry(handle, dir, de, bh);
 	if (retval)
 		goto end_unlink;
 	dir->i_ctime = dir->i_mtime = ext4_current_time(dir);
 	ext4_update_dx_flag(dir);
 	ext4_mark_inode_dirty(handle, dir);
-	if (inode->i_nlink == 0)
-		ext4_warning_inode(inode, "Deleting file '%.*s' with no links",
-				   dentry->d_name.len, dentry->d_name.name);
-	else
-		drop_nlink(inode);
+	drop_nlink(inode);
 	if (!inode->i_nlink)
 		ext4_orphan_add(handle, inode);
 	inode->i_ctime = ext4_current_time(inode);

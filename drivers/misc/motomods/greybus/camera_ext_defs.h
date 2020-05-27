@@ -30,7 +30,6 @@
 #define __CAMERA_EXT_DEFS_H
 
 #include <uapi/video/v4l2_camera_ext_defs.h>
-
 #include "greybus_protocols.h"
 
 /*

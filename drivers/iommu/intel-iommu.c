@@ -1598,9 +1598,6 @@ static void iommu_disable_protect_mem_regions(struct intel_iommu *iommu)
 	u32 pmen;
 	unsigned long flags;
 
-	if (!cap_plmr(iommu->cap) && !cap_phmr(iommu->cap))
-		return;
-
 	raw_spin_lock_irqsave(&iommu->register_lock, flags);
 	pmen = readl(iommu->reg + DMAR_PMEN_REG);
 	pmen &= ~DMA_PMEN_EPM;
@@ -3983,7 +3980,9 @@ static void __init init_no_remapping_devices(void)
 
 		/* This IOMMU has *only* gfx devices. Either bypass it or
 		   set the gfx_mapped flag, as appropriate */
-		if (!dmar_map_gfx) {
+		if (dmar_map_gfx) {
+			intel_iommu_gfx_mapped = 1;
+		} else {
 			drhd->ignored = 1;
 			for_each_active_dev_scope(drhd->devices,
 						  drhd->devices_cnt, i, dev)
@@ -4691,9 +4690,6 @@ int __init intel_iommu_init(void)
 			panic("tboot: Failed to reserve iommu ranges\n");
 		goto out_free_reserved_range;
 	}
-
-	if (dmar_map_gfx)
-		intel_iommu_gfx_mapped = 1;
 
 	init_no_remapping_devices();
 
